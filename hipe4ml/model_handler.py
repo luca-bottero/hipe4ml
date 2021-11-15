@@ -4,6 +4,8 @@ ML libraries to build a new model with common methods
 """
 import inspect
 import pickle
+import optuna
+import xgboost as xgb
 
 import numpy as np
 from bayes_opt import BayesianOptimization
@@ -367,6 +369,142 @@ class ModelHandler:
         print(f"Best target: {optimizer.max['target']:.6f}")
         print(f'Best parameters: {max_params}')
         self.set_model_params({**self.model_params, **self.__cast_model_params(max_params)})
+
+####################################################
+####################################################
+   
+   
+    def optimize_params_optuna(self, data, hyperparams_ranges, scoring, nfold = 5, n_trials = 100, timeout = None, n_jobs = -1):
+        """
+        Perform Bayesian optimization and update the model hyper-parameters
+        with the best ones
+
+        Parameters
+        ------------------------------------------------------
+        data: list
+            Contains respectively: training
+            set dataframe, training label array,
+            test set dataframe, test label array
+
+        hyperparams_ranges: dict
+            Hyperparameter ranges(in tuples or list).
+            Important: the type of the params must be preserved
+            when passing the ranges.
+            For example:
+            dict={
+                'max_depth':(10,100)
+                'learning_rate': (0.01,0.03)
+            }
+
+        scoring: string, callable or None
+            A string (see sklearn model evaluation documentation:
+            https://scikit-learn.org/stable/modules/model_evaluation.html)
+            or a scorer callable object / function with signature scorer(estimator, X, y)
+            which should return only a single value.
+            In binary classification 'roc_auc' is suggested.
+            In multi-classification one between ‘roc_auc_ovr’, ‘roc_auc_ovo’,
+            ‘roc_auc_ovr_weighted’ and ‘roc_auc_ovo_weighted’ is suggested.
+            For more information see
+            https://scikit-learn.org/stable/modules/model_evaluation.html#scoring-parameter
+
+        nfold: int
+            Number of folds to calculate the cross validation error
+
+        n_trials: int
+            Number of trials of the optimization process.
+            Defaults to 100
+
+        timeout: int
+            Maximun time allowed for the process in seconds. Set to None to disable it.
+            Defaults to None
+
+        n_jobs: int
+            The number of cores to be used for the 
+            optimization process. To use all the cores
+            set it to -1. 
+            Defaults to -1
+        """
+
+        n_classes = len(np.unique(data[1]))
+        self._n_classes = n_classes
+        if self.training_columns is None:
+            self.training_columns = list(data[0].columns)
+
+        x_train, y_train, x_valid, y_valid = data
+
+        def objective(trial):
+
+            params = self.__get_int_or_uniform(hyperparams_ranges, trial)
+
+            self.model = xgb.XGBClassifier(**params).fit(x_train[self.training_columns], y_train)
+
+            preds = self.model.predict(x_valid[self.training_columns])
+            y_pred = np.rint(preds)
+            return np.mean(cross_val_score(self.model, data[0][self.training_columns], data[1],
+                                           cv=nfold, scoring=scoring, n_jobs=1))
+
+        study = optuna.create_study(direction="maximize")
+        study.optimize(objective, n_trials=n_trials, timeout=timeout, n_jobs = n_jobs)
+
+        print("Number of finished trials: ", len(study.trials))
+        print("Best trial:")
+        best_trial = study.best_trial
+
+        print("  Value: {}".format(best_trial.value))
+        print("  Params: ")
+        for key, value in best_trial.params.items():
+            print("    {}: {}".format(key, value))
+        
+        self.model = xgb.XGBClassifier(**best_trial.params)
+
+        return study
+
+    def __get_int_or_uniform(self, hyperparams_ranges, trial):
+        """
+        Creates the dictionary of hyperparameters ranges for Optuna from a dictionary
+        of lists or tuples.
+
+        Parameters
+        ---------------------------
+            hyperparams_ranges: dict
+                Hyperparameter ranges(in tuples or list).
+                Important: the type of the params must be preserved
+                when passing the ranges.
+                For example:
+                dict={
+                    'max_depth':(10,100)
+                    'learning_rate': (0.01,0.03)
+                }
+
+            trial: optuna.trial.Trial
+                The trial object used in the optimization process
+
+        Returns
+        ---------------------------
+            params: dict
+                Optuna-ready dictionary of hyperparameters ranges
+        """
+
+        params = {}
+
+        for key in hyperparams_ranges:
+            if isinstance(hyperparams_ranges[key], str):
+                params[key] = hyperparams_ranges[key]
+            elif isinstance(hyperparams_ranges[key], bool):
+                params[key] = hyperparams_ranges[key]
+            elif isinstance(hyperparams_ranges[key][0], int):
+                params[key] = trial.suggest_int(key, hyperparams_ranges[key][0],hyperparams_ranges[key][1])
+            elif isinstance(hyperparams_ranges[key][0], float):
+                params[key] = trial.suggest_uniform(key,hyperparams_ranges[key][0],hyperparams_ranges[key][1])
+            else:
+                print('Type of ' + key + ' not supported.\n')
+
+        return params    
+
+####################################################
+####################################################
+
+
 
     def __cast_model_params(self, params):
         """
