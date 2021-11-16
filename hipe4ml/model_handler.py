@@ -376,7 +376,7 @@ class ModelHandler:
    
     def optimize_params_optuna(self, data, hyperparams_ranges, scoring, nfold = 5, n_trials = 100, timeout = None, n_jobs = -1):
         """
-        Perform Bayesian optimization and update the model hyper-parameters
+        Perform hyperparameter optimization using the Optuna module and update the model hyper-parameters
         with the best ones
 
         Parameters
