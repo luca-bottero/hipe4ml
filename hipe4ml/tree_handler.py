@@ -34,8 +34,8 @@ class TreeHandler:
             List of the names of the branches that one wants to analyse. If columns_names is
             not specified all the branches are converted
 
-        **kwds: extra arguments are passed on to the uproot.open or pandas.read_parquet methods:
-                https://uproot.readthedocs.io/en/latest/uproot.reading.open.html#uproot.reading.open
+        **kwds: extra arguments are passed on to the uproot.TTree.arrays() or pandas.read_parquet() methods:
+                https://uproot.readthedocs.io/en/latest/uproot.behaviors.TTree.TTree.html#uproot.behaviors.TTree.TTree.arrays
                 https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.read_parquet.html#pandas.read_parquet
         """
         self._tree = tree_name
@@ -46,7 +46,7 @@ class TreeHandler:
             for file in self._files:
                 if self._tree is not None:
                     self._full_data_frame = self._full_data_frame.append(
-                        uproot.open(f'{file}:{self._tree}', **kwds).arrays(filter_name=columns_names, library='pd'),
+                        uproot.open(f'{file}:{self._tree}').arrays(filter_name=columns_names, library='pd', **kwds),
                         ignore_index=True)
                 else:
                     self._full_data_frame = self._full_data_frame.append(
@@ -114,13 +114,6 @@ class TreeHandler:
             the multi-threading computation is turned off.
             More details in:
             https://docs.python.org/3/library/concurrent.futures.html
-
-        Returns
-        -----------------------------------------------
-        out: hipe4ml TreeHandler
-            TreeHandler from the original files containing informations on the pre-selections applied
-
-
 
         """
         self._files = file_name if isinstance(file_name, list) else [file_name]
@@ -514,5 +507,39 @@ class TreeHandler:
                         path, f"{base_file_name}_{self._projection_variable}_{i_bin[0]}_{i_bin[1]}.parquet.gzip")
                     self._sliced_df_list[ind].to_parquet(
                         name, compression="gzip")
+            else:
+                print("\nWarning: slices not available")
+
+    def write_df_to_root_files(self, base_file_name="TreeDataFrame", tree_name="df", path="./", save_slices=False):
+        """
+        Write the pandas dataframe to root files
+
+        Parameters
+        ------------------------------------------------
+        base_file_name: str
+            Base filename used to save the root files
+
+        path: str
+            Base path of the output files
+
+        save_slices: bool
+            If True and the slices are available, single root files for each
+            bins are created
+        """
+        if self._full_data_frame is not None:
+            name = os.path.join(path, f"{base_file_name}.root")
+            out_file = uproot.recreate(name)
+            out_file[tree_name] = self._full_data_frame
+            out_file.close()
+        else:
+            print("\nWarning: original DataFrame not available")
+        if save_slices:
+            if self._sliced_df_list is not None:
+                for ind, i_bin in enumerate(self._projection_binning):
+                    name = os.path.join(
+                        path, f"{base_file_name}_{self._projection_variable}_{i_bin[0]}_{i_bin[1]}.root")
+                    out_file = uproot.recreate(name)
+                    out_file[tree_name] = self._sliced_df_list[ind]
+                    out_file.close()
             else:
                 print("\nWarning: slices not available")
