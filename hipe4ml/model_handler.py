@@ -435,6 +435,7 @@ class ModelHandler:
         def objective(trial):
 
             params = self.__get_int_or_uniform(hyperparams_ranges, trial)
+            params['n_jobs'] = 1
 
             self.model = xgb.XGBClassifier(**params).fit(x_train[self.training_columns], y_train)
 
