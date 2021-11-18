@@ -437,11 +437,9 @@ class ModelHandler:
             params = self.__get_int_or_uniform(hyperparams_ranges, trial)
             params['n_jobs'] = 1
 
-            self.model = xgb.XGBClassifier(**params).fit(x_train[self.training_columns], y_train)
-
-            preds = self.model.predict(x_valid[self.training_columns])
-            y_pred = np.rint(preds)
-            return np.mean(cross_val_score(self.model, data[0][self.training_columns], data[1],
+            model = xgb.XGBClassifier(use_label_encoder=False, **params)
+            
+            return np.mean(cross_val_score(model, x_train[self.training_columns], y_train,
                                            cv=nfold, scoring=scoring, n_jobs=1))
 
         study = optuna.create_study(direction="maximize")
